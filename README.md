@@ -1,327 +1,313 @@
-# AI CRM + Workflow EMS Integration
+# 🏢 Unified CRM-ERP-Finance System
 
 ## 🎯 Overview
 
-This project integrates the **AI CRM System** with the **Workflow Employee Management System (EMS)**, enabling seamless employee monitoring and management through a unified interface.
+**Blackhole Infiverse** integrated business management platform combining:
 
-### Key Features
+1. **Workflow EMS** - Employee Management & Attendance
+2. **AI CRM** - Customer Relationship Management  
+3. **Artha Finance** - Financial Management & Accounting
+4. **ERP Data Pipeline** - Inventory, Orders, Returns
 
-✅ **Unified Dashboard** - View workflow admin dashboard directly in AI CRM  
-✅ **Real-time Monitoring** - Live employee attendance and activity tracking  
-✅ **Cross-System Authentication** - Single sign-on across both systems  
-✅ **Comprehensive Analytics** - Employee statistics and performance metrics  
-✅ **Department Management** - Organize and track employees by department  
+All systems share a **unified MongoDB database** for seamless data flow.
 
-## 🏗️ System Architecture
+---
+
+## 🗄️ Database Architecture
+
+**Unified Database:** `blackhole_db` on MongoDB Atlas
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    AI CRM Frontend                       │
-│                   (React + Vite)                         │
-│                    Port: 3000                            │
-│                                                          │
-│  ┌──────────────────────────────────────────────┐      │
-│  │         Infiverse Monitoring Tab              │      │
-│  │  ┌────────────────────────────────────┐      │      │
-│  │  │   Workflow Monitoring Dashboard    │      │      │
-│  │  │  - Employee Attendance              │      │      │
-│  │  │  - Live Status                      │      │      │
-│  │  │  - Statistics                       │      │      │
-│  │  └────────────────────────────────────┘      │      │
-│  └──────────────────────────────────────────────┘      │
-└────────────────┬────────────────────────────────────────┘
-                 │
-                 │ HTTP/REST API
-                 │
-    ┌────────────┴────────────┐
-    │                         │
-    ▼                         ▼
-┌─────────────────┐   ┌─────────────────┐
-│  AI CRM Backend │   │ Workflow Backend│
-│   (Node.js)     │   │   (Node.js)     │
-│   Port: 8000    │   │   Port: 5001    │
-└────────┬────────┘   └────────┬────────┘
-         │                     │
-         │                     │
-         ▼                     ▼
-    ┌─────────────────────────────┐
-    │        MongoDB Atlas         │
-    │  - CRM Data                  │
-    │  - Employee Data             │
-    │  - Attendance Records        │
-    └─────────────────────────────┘
+blackhole_db/
+├── employees              # Workflow: Employee records
+├── attendance             # Workflow: Attendance tracking
+├── departments            # Workflow: Department management
+├── users                  # Shared: Authentication
+├── accounts               # CRM: Customer accounts
+├── contacts               # CRM: Contact management
+├── leads                  # CRM: Sales leads
+├── opportunities          # CRM: Sales opportunities
+├── expenses               # Finance: Company expenses
+├── transactions           # Finance: Income/revenue
+├── ledger_entries         # Finance: Accounting ledger
+├── gst_filings            # Finance: GST compliance
+├── inventory              # ERP: Stock management
+├── orders                 # ERP: Order processing
+└── returns                # ERP: Return management
 ```
+
+---
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-
-- Node.js (v16 or higher)
-- MongoDB (local or Atlas)
+- Node.js v16+
+- MongoDB Atlas account
 - Git
 
 ### Installation
 
-1. **Clone the repository**
-   ```bash
-   cd C:\Users\A\Desktop\CRM-ERP
-   ```
+```bash
+# Clone repository
+cd C:\Users\A\Desktop\CRM-ERP
 
-2. **Install dependencies**
-   
-   **Workflow Backend:**
-   ```bash
-   cd workflow-blackhole/server
-   npm install
-   ```
-
-   **AI CRM Backend:**
-   ```bash
-   cd ../../ai-crm/backend-nodejs
-   npm install
-   ```
-
-   **AI CRM Frontend:**
-   ```bash
-   cd ../frontend
-   npm install
-   ```
-
-3. **Configure Environment Variables**
-
-   **Workflow Backend** (`workflow-blackhole/server/.env`):
-   ```env
-   PORT=5001
-   MONGODB_URI=your_mongodb_connection_string
-   JWT_SECRET=supersecretkey
-   FRONTEND_URL=http://localhost:3000
-   CORS_ORIGIN=http://localhost:3000,http://localhost:5173
-   ```
-
-   **AI CRM Frontend** (`ai-crm/frontend/.env`):
-   ```env
-   VITE_API_URL=http://localhost:8000
-   VITE_WS_URL=ws://localhost:8000
-   VITE_WORKFLOW_API_URL=http://localhost:5001/api
-   ```
-
-4. **Start the System**
-
-   **Option A: Use the startup script (Windows)**
-   ```bash
-   START_INTEGRATED_SYSTEM.bat
-   ```
-
-   **Option B: Manual start**
-   
-   Terminal 1 - Workflow Backend:
-   ```bash
-   cd workflow-blackhole/server
-   npm start
-   ```
-
-   Terminal 2 - AI CRM Backend:
-   ```bash
-   cd ai-crm/backend-nodejs
-   npm start
-   ```
-
-   Terminal 3 - AI CRM Frontend:
-   ```bash
-   cd ai-crm/frontend
-   npm run dev
-   ```
-
-5. **Access the System**
-   - Open browser: `http://localhost:3000`
-   - Login with your credentials
-   - Navigate to **Infiverse** → **Workflow Monitoring** tab
-
-## 📋 Features
-
-### Workflow Monitoring Dashboard
-
-#### Statistics Cards
-- **Total Employees** - Count of all registered employees
-- **Present Today** - Employees who checked in today
-- **Active Now** - Currently working employees
-- **Average Hours** - Average working hours today
-
-#### Employee Table
-- Real-time attendance status
-- Department information
-- Work mode (WFH/WFO)
-- Hours worked
-- Start/end times
-
-#### Actions
-- **Refresh** - Manual data refresh
-- **Auto-refresh** - Updates every 30 seconds
-- **Status Badges** - Visual indicators for employee status
-
-## 🔧 Configuration
-
-### Workflow Backend Routes
-
-New integration route added: `routes/crmIntegration.js`
-
-**Endpoints:**
-- `GET /api/crm-integration/workflow-dashboard` - Get all employee data
-- `GET /api/crm-integration/employee-details/:id` - Get specific employee
-
-### Frontend Integration
-
-Modified file: `ai-crm/frontend/src/pages/Infiverse.jsx`
-
-**New Components:**
-- Workflow Monitoring tab
-- Employee attendance table
-- Statistics dashboard
-- Refresh functionality
-
-## 🔐 Authentication
-
-Both systems use JWT-based authentication. The integration automatically handles token sharing between systems.
-
-**Token Storage:**
-- Workflow: `WorkflowToken`
-- CRM: `token`
-
-## 📊 Data Flow
-
-1. User opens Workflow Monitoring tab in AI CRM
-2. Frontend sends request to Workflow Backend
-3. Backend queries MongoDB for employee data
-4. Data is formatted and returned to frontend
-5. Frontend displays data in dashboard
-6. Auto-refresh updates data every 30 seconds
-
-## 🛠️ Development
-
-### Project Structure
-
-```
-CRM-ERP/
-├── workflow-blackhole/          # Workflow EMS
-│   ├── server/                  # Backend
-│   │   ├── routes/
-│   │   │   └── crmIntegration.js  # NEW: Integration routes
-│   │   ├── models/
-│   │   └── index.js
-│   └── client/                  # Frontend
-│
-├── ai-crm/                      # AI CRM System
-│   ├── backend-nodejs/          # Backend
-│   │   └── src/
-│   └── frontend/                # Frontend
-│       └── src/
-│           └── pages/
-│               └── Infiverse.jsx  # MODIFIED: Added monitoring tab
-│
-├── INTEGRATION_GUIDE.md         # Detailed integration docs
-├── START_INTEGRATED_SYSTEM.bat  # Startup script
-└── README.md                    # This file
+# Install all dependencies
+cd workflow-blackhole/server && npm install
+cd ../../ai-crm/backend-nodejs && npm install
+cd ../frontend && npm install
+cd ../../artha-finance/backend && npm install
 ```
 
-### Adding New Features
+### Configuration
 
-1. **Backend:** Add new endpoints in `crmIntegration.js`
-2. **Frontend:** Update `Infiverse.jsx` component
-3. **Test:** Verify data flow and authentication
+All systems use the same MongoDB connection:
 
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**1. CORS Errors**
-- Check `CORS_ORIGIN` in workflow `.env`
-- Ensure frontend URL is whitelisted
-
-**2. Authentication Failed**
-- Verify JWT token is valid
-- Check token expiration
-- Ensure admin privileges
-
-**3. Data Not Loading**
-- Verify workflow backend is running (port 5001)
-- Check `VITE_WORKFLOW_API_URL` in frontend `.env`
-- Inspect browser console for errors
-
-**4. Port Already in Use**
-- Change port in `.env` files
-- Kill existing processes on ports 3000, 5001, 8000
-
-### Debug Mode
-
-Enable detailed logging:
-
-**Workflow Backend:**
+**Workflow** (`workflow-blackhole/server/.env`):
 ```env
-LOG_LEVEL=debug
+MONGODB_URI=mongodb+srv://7819vijaysharma:Ram%402025@cluster0.cvizq.mongodb.net/blackhole_db
+PORT=5001
+JWT_SECRET=supersecretkey
 ```
 
-**Browser Console:**
-```javascript
-localStorage.setItem('debug', 'true')
+**AI CRM Backend** (`ai-crm/backend-nodejs/.env`):
+```env
+MONGODB_URL=mongodb+srv://7819vijaysharma:Ram%402025@cluster0.cvizq.mongodb.net/blackhole_db
+PORT=8000
+JWT_SECRET=supersecretkey
 ```
+
+**Artha Finance** (`artha-finance/backend/.env`):
+```env
+MONGODB_URI=mongodb+srv://7819vijaysharma:Ram%402025@cluster0.cvizq.mongodb.net/blackhole_db
+PORT=5002
+JWT_SECRET=supersecretkey
+```
+
+**AI CRM Frontend** (`ai-crm/frontend/.env`):
+```env
+VITE_API_URL=http://localhost:8000
+VITE_WORKFLOW_API_URL=http://localhost:5001/api
+VITE_ARTHA_API_URL=http://localhost:5002/api
+```
+
+### Start System
+
+**Option 1: Automated (Windows)**
+```bash
+START_UNIFIED_SYSTEM.bat
+```
+
+**Option 2: Manual**
+```bash
+# Terminal 1 - Workflow Backend
+cd workflow-blackhole/server
+npm start
+
+# Terminal 2 - AI CRM Backend
+cd ai-crm/backend-nodejs
+npm start
+
+# Terminal 3 - Artha Finance Backend
+cd artha-finance/backend
+npm start
+
+# Terminal 4 - AI CRM Frontend
+cd ai-crm/frontend
+npm run dev
+```
+
+### Access Points
+
+- **AI CRM Dashboard:** http://localhost:3000
+- **Workflow API:** http://localhost:5001/api
+- **AI CRM API:** http://localhost:8000
+- **Artha Finance API:** http://localhost:5002/api
+
+---
+
+## 📊 System Features
+
+### Workflow EMS (Port 5001)
+- ✅ Employee attendance tracking
+- ✅ Real-time monitoring
+- ✅ Department management
+- ✅ Biometric integration
+- ✅ Salary calculation
+
+### AI CRM (Port 8000 + 3000)
+- ✅ Customer account management
+- ✅ Lead tracking
+- ✅ Sales opportunities
+- ✅ Communication logs
+- ✅ Workflow monitoring integration
+
+### Artha Finance (Port 5002)
+- ✅ Expense management
+- ✅ Income tracking
+- ✅ Ledger with blockchain integrity
+- ✅ GST filing & compliance
+- ✅ TDS management
+- ✅ Financial reports
+
+### ERP Data Pipeline
+- ✅ Excel to JSON ingestion
+- ✅ Inventory management
+- ✅ Order processing
+- ✅ Returns handling
+
+---
+
+## 🔗 API Integration
+
+### Artha Finance Endpoints
+
+**Base URL:** `http://localhost:5002/api/artha-integration`
+
+#### Get Financial Summary
+```bash
+GET /financial-summary?month=1&year=2025
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "expenses": { "total": 50000, "count": 25 },
+    "income": { "total": 150000, "count": 10 },
+    "balance": 100000,
+    "profitMargin": "66.67"
+  }
+}
+```
+
+#### Get Dashboard Stats
+```bash
+GET /dashboard-stats
+```
+
+#### Get Expenses
+```bash
+GET /expenses?startDate=2025-01-01&status=approved
+```
+
+#### Get Income
+```bash
+GET /income?startDate=2025-01-01
+```
+
+#### Get Ledger
+```bash
+GET /ledger?limit=50
+```
+
+#### Get GST Summary
+```bash
+GET /gst-summary?quarter=1&year=2025
+```
+
+### Workflow Integration Endpoints
+
+**Base URL:** `http://localhost:5001/api/crm-integration`
+
+```bash
+GET /workflow-dashboard
+GET /employee-details/:id
+```
+
+---
+
+## 🏗️ System Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│         AI CRM Frontend (React + Vite)              │
+│                  Port: 3000                          │
+│  ┌──────────────┬──────────────┬──────────────┐    │
+│  │   Workflow   │   CRM Data   │   Finance    │    │
+│  │  Monitoring  │  Management  │  Dashboard   │    │
+│  └──────────────┴──────────────┴──────────────┘    │
+└────────┬──────────────┬──────────────┬─────────────┘
+         │              │              │
+         ▼              ▼              ▼
+    ┌────────┐    ┌─────────┐    ┌──────────┐
+    │Workflow│    │AI CRM   │    │  Artha   │
+    │Backend │    │Backend  │    │ Finance  │
+    │:5001   │    │:8000    │    │  :5002   │
+    └────┬───┘    └────┬────┘    └────┬─────┘
+         │             │              │
+         └─────────────┴──────────────┘
+                       │
+                       ▼
+              ┌────────────────┐
+              │  MongoDB Atlas  │
+              │  blackhole_db   │
+              └────────────────┘
+```
+
+---
+
+## 🧪 Testing
+
+### Test All APIs
+
+```bash
+# Workflow
+curl http://localhost:5001/api/crm-integration/workflow-dashboard
+
+# AI CRM
+curl http://localhost:8000/api/health
+
+# Artha Finance
+curl http://localhost:5002/api/artha-integration/dashboard-stats
+```
+
+---
 
 ## 📚 Documentation
 
-- [Integration Guide](./INTEGRATION_GUIDE.md) - Detailed technical documentation
-- [Workflow EMS Docs](./workflow-blackhole/README.md) - Workflow system documentation
-- [AI CRM Docs](./ai-crm/README.md) - CRM system documentation
+- [Unified Integration Guide](./UNIFIED_INTEGRATION_GUIDE.md)
+- [Workflow EMS Docs](./workflow-blackhole/README.md)
+- [AI CRM Docs](./ai-crm/README.md)
+- [Artha Finance Docs](./artha-finance/README.md)
+- [ERP Pipeline Guide](./excel_to_json_pipeline.py)
+
+---
 
 ## 🚢 Deployment
 
 ### Production Checklist
 
-- [ ] Update environment variables with production URLs
+- [ ] Update MongoDB URI to production cluster
 - [ ] Configure CORS for production domains
-- [ ] Set up SSL certificates (HTTPS)
-- [ ] Configure production MongoDB
-- [ ] Set up logging and monitoring
-- [ ] Test authentication flow
-- [ ] Verify data synchronization
-- [ ] Set up backups
+- [ ] Set up SSL certificates
+- [ ] Enable monitoring and logging
+- [ ] Configure backups
+- [ ] Test all integrations
+- [ ] Set up CI/CD pipeline
 
-### Deployment Platforms
+### Recommended Platforms
 
-**Recommended:**
-- **Backend:** Render, Railway, or AWS EC2
-- **Frontend:** Vercel, Netlify, or AWS S3 + CloudFront
-- **Database:** MongoDB Atlas
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit changes (`git commit -m 'Add AmazingFeature'`)
-4. Push to branch (`git push origin feature/AmazingFeature`)
-5. Open Pull Request
-
-## 📝 License
-
-This project is proprietary software for Blackhole Infiverse.
-
-## 👥 Team
-
-**Blackhole Infiverse Development Team**
-- Email: blackholeems@gmail.com
-- Office: Blackhole Infiverse, Mumbai, Maharashtra 400104
-
-## 🎉 Success!
-
-If you see the Workflow Monitoring tab with employee data, the integration is working correctly!
-
-### Next Steps
-
-1. Explore the dashboard features
-2. Monitor employee attendance
-3. Check real-time statistics
-4. Customize as needed
+- **Backend:** Render, Railway, AWS EC2
+- **Frontend:** Vercel, Netlify
+- **Database:** MongoDB Atlas (Production Cluster)
 
 ---
 
-**Version:** 1.0.0  
+## 👥 Team
+
+**Blackhole Infiverse Development Team**  
+Email: blackholeems@gmail.com  
+Office: Mumbai, Maharashtra 400104
+
+---
+
+## 📝 License
+
+Proprietary software for Blackhole Infiverse.
+
+---
+
+**Version:** 2.0.0  
 **Last Updated:** January 2025  
-**Status:** ✅ Production Ready
+**Status:** ✅ Unified Integration Complete
