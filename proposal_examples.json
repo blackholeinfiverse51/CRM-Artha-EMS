@@ -1,0 +1,95 @@
+{
+  "examples": [
+    {
+      "rule": "Employee Idle Detection",
+      "description": "Triggered when employee has no activity for more than 2 hours",
+      "proposal": {
+        "trace_id": "550e8400-e29b-41d4-a716-446655440000",
+        "employee_id": "EMP123",
+        "action_type": "CHECK_EMPLOYEE_ACTIVITY",
+        "action_payload": {
+          "reason": "Employee idle for more than 3 hours",
+          "employee_id": "EMP123",
+          "last_activity": "2025-01-15T10:30:00.000Z"
+        },
+        "proposed_by": "ERP_MONITOR_AGENT",
+        "reason": "Employee has been inactive for 3 hours",
+        "requested_at": "2025-01-15T13:45:00.000Z"
+      }
+    },
+    {
+      "rule": "Attendance Anomaly",
+      "description": "Triggered when employee has system activity but no attendance record",
+      "proposal": {
+        "trace_id": "660e8400-e29b-41d4-a716-446655440001",
+        "employee_id": "EMP102",
+        "action_type": "SEND_ATTENDANCE_ALERT",
+        "action_payload": {
+          "message": "Employee activity detected but attendance missing",
+          "employee_id": "EMP102",
+          "date": "2025-01-15"
+        },
+        "proposed_by": "ERP_MONITOR_AGENT",
+        "reason": "System activity detected without attendance record",
+        "requested_at": "2025-01-15T14:00:00.000Z"
+      }
+    },
+    {
+      "rule": "Task Deadline Violation",
+      "description": "Triggered when task is incomplete and past deadline",
+      "proposal": {
+        "trace_id": "770e8400-e29b-41d4-a716-446655440002",
+        "employee_id": "EMP456",
+        "action_type": "TASK_ESCALATION",
+        "action_payload": {
+          "task_id": "TASK456",
+          "reason": "Task deadline exceeded",
+          "days_overdue": 3,
+          "current_status": "in_progress"
+        },
+        "proposed_by": "ERP_MONITOR_AGENT",
+        "reason": "Task TASK456 is 3 days overdue",
+        "requested_at": "2025-01-15T14:15:00.000Z"
+      }
+    },
+    {
+      "rule": "Multiple Violations",
+      "description": "Example of employee with both idle and task deadline issues",
+      "proposals": [
+        {
+          "trace_id": "880e8400-e29b-41d4-a716-446655440003",
+          "employee_id": "EMP789",
+          "action_type": "CHECK_EMPLOYEE_ACTIVITY",
+          "action_payload": {
+            "reason": "Employee idle for more than 5 hours",
+            "employee_id": "EMP789",
+            "last_activity": "2025-01-15T08:00:00.000Z"
+          },
+          "proposed_by": "ERP_MONITOR_AGENT",
+          "reason": "Employee has been inactive for 5 hours",
+          "requested_at": "2025-01-15T13:30:00.000Z"
+        },
+        {
+          "trace_id": "990e8400-e29b-41d4-a716-446655440004",
+          "employee_id": "EMP789",
+          "action_type": "TASK_ESCALATION",
+          "action_payload": {
+            "task_id": "TASK789",
+            "reason": "Task deadline exceeded",
+            "days_overdue": 1,
+            "current_status": "pending"
+          },
+          "proposed_by": "ERP_MONITOR_AGENT",
+          "reason": "Task TASK789 is 1 days overdue",
+          "requested_at": "2025-01-15T13:30:00.000Z"
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "version": "1.0.0",
+    "generated_at": "2025-01-15T00:00:00.000Z",
+    "system": "ERP Agent Monitor",
+    "architecture": "Human-in-Loop AI"
+  }
+}
