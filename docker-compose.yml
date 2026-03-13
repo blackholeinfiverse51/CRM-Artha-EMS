@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # Agent History Service with Traceability
+  agent-history:
+    build: ./agent-history-service
+    ports:
+      - "5003:5003"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb+srv://7819vijaysharma:Ram%402025@cluster0.cvizq.mongodb.net/blackhole_db
+      - PORT=5003
+      - JWT_SECRET=supersecretkey
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - erp-network
+
+  # Workflow EMS
+  workflow-ems:
+    build: ./workflow-blackhole/server
+    ports:
+      - "5001:5001"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb+srv://7819vijaysharma:Ram%402025@cluster0.cvizq.mongodb.net/blackhole_db
+      - PORT=5001
+      - JWT_SECRET=supersecretkey
+    depends_on:
+      - agent-history
+    restart: unless-stopped
+    networks:
+      - erp-network
+
+  # AI CRM Backend
+  ai-crm-backend:
+    build: ./ai-crm/backend-nodejs
+    ports:
+      - "8000:8000"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URL=mongodb+srv://7819vijaysharma:Ram%402025@cluster0.cvizq.mongodb.net/blackhole_db
+      - PORT=8000
+      - JWT_SECRET=supersecretkey
+    depends_on:
+      - agent-history
+    restart: unless-stopped
+    networks:
+      - erp-network
+
+  # Artha Finance Backend
+  artha-finance:
+    build: ./artha-finance/backend
+    ports:
+      - "5002:5002"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb+srv://7819vijaysharma:Ram%402025@cluster0.cvizq.mongodb.net/blackhole_db
+      - PORT=5002
+      - JWT_SECRET=supersecretkey
+    depends_on:
+      - agent-history
+    restart: unless-stopped
+    networks:
+      - erp-network
+
+  # AI CRM Frontend
+  ai-crm-frontend:
+    build: ./ai-crm/frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - VITE_WORKFLOW_API_URL=http://localhost:5001/api
+      - VITE_ARTHA_API_URL=http://localhost:5002/api
+      - VITE_AGENT_HISTORY_URL=http://localhost:5003/api/agent
+    depends_on:
+      - ai-crm-backend
+      - workflow-ems
+      - artha-finance
+      - agent-history
+    restart: unless-stopped
+    networks:
+      - erp-network
+
+networks:
+  erp-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
