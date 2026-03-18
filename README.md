@@ -311,3 +311,134 @@ Proprietary software for Blackhole Infiverse.
 **Version:** 2.0.0  
 **Last Updated:** January 2025  
 **Status:** ✅ Unified Integration Complete
+
+
+---
+
+## 🛡️ Governance Service (Port 5003)
+
+### Phase 1: Governance Lifecycle Architecture
+
+**NEW:** Agentic ERP governance layer ensuring no AI agent executes actions directly.
+
+#### Features
+- ✅ 6-stage governance pipeline (CREATED → REVIEWED → APPROVED → EXECUTED → COMPLETED)
+- ✅ Proposal-based action system
+- ✅ Policy validation & business rules
+- ✅ Auto/manual approval workflows
+- ✅ Deterministic workflow execution
+- ✅ Full audit trail with trace_id
+- ✅ Immutable execution logs
+
+#### Quick Start
+```bash
+cd governance-service
+npm install
+npm start
+```
+
+#### API Endpoints
+**Base URL:** `http://localhost:5003/api/governance`
+
+```bash
+POST /proposals/create       # Agents create proposals
+POST /proposals/review       # Validate business rules
+POST /proposals/approve      # Approve for execution
+POST /proposals/reject       # Reject proposal
+POST /workflow/execute       # Execute approved proposals
+GET  /proposals/:id/trace    # Full lifecycle trace
+```
+
+#### Documentation
+- [Governance Architecture](./governance-service/GOVERNANCE_ARCHITECTURE.md)
+- [State Transitions](./governance-service/STATE_TRANSITIONS.md)
+- [API Contracts](./governance-service/API_CONTRACTS.md)
+
+#### Integration
+Update AI CRM Frontend `.env`:
+```env
+VITE_GOVERNANCE_API_URL=http://localhost:5003/api/governance
+```
+
+---
+
+## 🔄 Updated System Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│         AI CRM Frontend (React + Vite)              │
+│                  Port: 3000                          │
+└────────┬──────────────┬──────────────┬──────────────┘
+         │              │              │
+         ▼              ▼              ▼
+    ┌────────┐    ┌─────────┐    ┌──────────┐    ┌────────────┐
+    │Workflow│    │AI CRM   │    │  Artha   │    │ Governance │
+    │:5001   │    │:8000    │    │  :5002   │    │   :5003    │
+    └────┬───┘    └────┬────┘    └────┬─────┘    └─────┬──────┘
+         │             │              │                 │
+         └─────────────┴──────────────┴─────────────────┘
+                       │
+                       ▼
+              ┌────────────────┐
+              │  MongoDB Atlas  │
+              │  blackhole_db   │
+              │  + proposals    │
+              └────────────────┘
+```
+
+---
+
+## 🚀 Start Complete System
+
+**Updated Startup (with Governance):**
+
+```bash
+# Terminal 1 - Workflow Backend
+cd workflow-blackhole/server
+npm start
+
+# Terminal 2 - AI CRM Backend
+cd ai-crm/backend-nodejs
+npm start
+
+# Terminal 3 - Artha Finance Backend
+cd artha-finance/backend
+npm start
+
+# Terminal 4 - Governance Service
+cd governance-service
+npm start
+
+# Terminal 5 - AI CRM Frontend
+cd ai-crm/frontend
+npm run dev
+```
+
+### Access Points
+
+- **AI CRM Dashboard:** http://localhost:3000
+- **Workflow API:** http://localhost:5001/api
+- **AI CRM API:** http://localhost:8000
+- **Artha Finance API:** http://localhost:5002/api
+- **Governance API:** http://localhost:5003/api/governance
+
+---
+
+## 🧪 Test Governance System
+
+```bash
+# Health check
+curl http://localhost:5003/health
+
+# Create proposal
+curl -X POST http://localhost:5003/api/governance/proposals/create \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "test-agent",
+    "action_type": "CREATE_LEAD",
+    "payload": {"name": "Test Lead", "contact": "test@example.com"}
+  }'
+
+# Get trace (use proposal_id from above)
+curl http://localhost:5003/api/governance/proposals/{proposal_id}/trace
+```
