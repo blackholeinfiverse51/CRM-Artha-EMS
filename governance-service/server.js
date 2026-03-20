@@ -12,10 +12,13 @@ app.use(express.json());
 app.use(traceLogger);
 
 mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
+  serverSelectionTimeoutMS: 30000,
+  socketTimeoutMS: 45000,
 }).then(() => console.log('✅ Governance Service connected to MongoDB'))
-  .catch(err => console.error('❌ MongoDB connection error:', err));
+  .catch(err => {
+    console.error('❌ MongoDB connection error:', err);
+    process.exit(1);
+  });
 
 app.use('/api/governance', governanceRoutes);
 app.use('/api/agent', governanceRoutes);
