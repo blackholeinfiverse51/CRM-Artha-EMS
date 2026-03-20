@@ -1,4 +1,5 @@
 const Proposal = require('../models/Proposal');
+const workflowService = require('./workflowService');
 
 const autoApprovalRules = {
   'CREATE_LEAD': true,
@@ -17,6 +18,33 @@ class ApprovalService {
     proposal.approved_by = approved_by;
     proposal.approval_timestamp = new Date();
     await proposal.save();
+
+    console.log(JSON.stringify({
+      trace_id: proposal.trace_id,
+      stage: 'approval_trigger',
+      status: 'approved',
+      timestamp: new Date().toISOString()
+    }));
+
+    setImmediate(async () => {
+      try {
+        await workflowService.executeProposal(proposal_id);
+        console.log(JSON.stringify({
+          trace_id: proposal.trace_id,
+          stage: 'approval_trigger',
+          status: 'execution_triggered',
+          timestamp: new Date().toISOString()
+        }));
+      } catch (error) {
+        console.error(JSON.stringify({
+          trace_id: proposal.trace_id,
+          stage: 'approval_trigger',
+          status: 'execution_failed',
+          error: error.message,
+          timestamp: new Date().toISOString()
+        }));
+      }
+    });
 
     return proposal;
   }
