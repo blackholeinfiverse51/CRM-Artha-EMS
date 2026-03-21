@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  # Agent History Service with Traceability
-  agent-history:
-    build: ./agent-history-service
+  # Governance Service (Phase 5-10 Complete)
+  governance-service:
+    build: ./governance-service
     ports:
       - "5003:5003"
     environment:
@@ -11,8 +11,35 @@ services:
       - MONGODB_URI=mongodb+srv://7819vijaysharma:Ram%402025@cluster0.cvizq.mongodb.net/blackhole_db
       - PORT=5003
       - JWT_SECRET=supersecretkey
+      - MONITOR_INTERVAL_MS=60000
+      - IDLE_THRESHOLD_HOURS=2
+      - API_BASE_URL=http://governance-service:5003
+      - AGENT_RULES_ENABLED=true
+      - AUTO_APPROVE_THRESHOLD=0.95
+      - WORKFLOW_API_URL=http://workflow-ems:5001/api
+      - CRM_API_URL=http://ai-crm-backend:8000
+      - FINANCE_API_URL=http://artha-finance:5002/api
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - erp-network
+
+  # Agent History Service with Traceability
+  agent-history:
+    build: ./agent-history-service
+    ports:
+      - "5004:5004"
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb+srv://7819vijaysharma:Ram%402025@cluster0.cvizq.mongodb.net/blackhole_db
+      - PORT=5004
+      - JWT_SECRET=supersecretkey
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5004/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -31,6 +58,7 @@ services:
       - PORT=5001
       - JWT_SECRET=supersecretkey
     depends_on:
+      - governance-service
       - agent-history
     restart: unless-stopped
     networks:
@@ -47,6 +75,7 @@ services:
       - PORT=8000
       - JWT_SECRET=supersecretkey
     depends_on:
+      - governance-service
       - agent-history
     restart: unless-stopped
     networks:
@@ -63,6 +92,7 @@ services:
       - PORT=5002
       - JWT_SECRET=supersecretkey
     depends_on:
+      - governance-service
       - agent-history
     restart: unless-stopped
     networks:
@@ -77,8 +107,10 @@ services:
       - VITE_API_URL=http://localhost:8000
       - VITE_WORKFLOW_API_URL=http://localhost:5001/api
       - VITE_ARTHA_API_URL=http://localhost:5002/api
-      - VITE_AGENT_HISTORY_URL=http://localhost:5003/api/agent
+      - VITE_AGENT_HISTORY_URL=http://localhost:5004/api/agent
+      - VITE_GOVERNANCE_API_URL=http://localhost:5003/api/governance
     depends_on:
+      - governance-service
       - ai-crm-backend
       - workflow-ems
       - artha-finance

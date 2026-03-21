@@ -1,28 +1,36 @@
 const Proposal = require('../models/Proposal');
 const { v4: uuidv4 } = require('uuid');
 const axios = require('axios');
+const config = require('../config');
+const outcomeService = require('./outcomeService');
 
 const workflowHandlers = {
   'CREATE_EMPLOYEE': async (payload, trace_id) => {
-    const response = await axios.post('http://localhost:5001/api/employees', payload, {
+    const response = await axios.post(`${config.WORKFLOW_API_URL}/employees`, payload, {
       headers: { 'X-Trace-ID': trace_id }
     });
     return response.data;
   },
   'UPDATE_INVENTORY': async (payload, trace_id) => {
-    const response = await axios.put(`http://localhost:8000/api/inventory/${payload.item_id}`, payload, {
+    const response = await axios.put(`${config.CRM_API_URL}/api/inventory/${payload.item_id}`, payload, {
+      headers: { 'X-Trace-ID': trace_id }
+    });
+    return response.data;
+  },
+  'AUTO_RESTOCK': async (payload, trace_id) => {
+    const response = await axios.post(`${config.CRM_API_URL}/api/inventory/restock`, payload, {
       headers: { 'X-Trace-ID': trace_id }
     });
     return response.data;
   },
   'CREATE_EXPENSE': async (payload, trace_id) => {
-    const response = await axios.post('http://localhost:5002/api/expenses', payload, {
+    const response = await axios.post(`${config.FINANCE_API_URL}/expenses`, payload, {
       headers: { 'X-Trace-ID': trace_id }
     });
     return response.data;
   },
   'CREATE_LEAD': async (payload, trace_id) => {
-    const response = await axios.post('http://localhost:8000/api/leads', payload, {
+    const response = await axios.post(`${config.CRM_API_URL}/api/leads`, payload, {
       headers: { 'X-Trace-ID': trace_id }
     });
     return response.data;
@@ -39,6 +47,7 @@ class WorkflowService {
 
     const execution_id = uuidv4();
     const logs = [];
+    const startTime = Date.now();
 
     try {
       logs.push(`[${new Date().toISOString()}] Starting execution for ${proposal.action_type}`);
@@ -59,6 +68,14 @@ class WorkflowService {
       proposal.executed_at = new Date();
       await proposal.save();
 
+      await outcomeService.recordOutcome(
+        proposal.trace_id,
+        proposal.proposal_id,
+        proposal.action_type,
+        result,
+        startTime
+      );
+
       return { execution_id, result, proposal };
     } catch (error) {
       logs.push(`[${new Date().toISOString()}] Execution failed: ${error.message}`);
@@ -69,6 +86,14 @@ class WorkflowService {
       proposal.errors = [error.message];
       proposal.executed_at = new Date();
       await proposal.save();
+
+      await outcomeService.recordOutcome(
+        proposal.trace_id,
+        proposal.proposal_id,
+        proposal.action_type,
+        { error: error.message },
+        startTime
+      );
 
       throw error;
     }

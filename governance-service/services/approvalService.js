@@ -8,7 +8,7 @@ const autoApprovalRules = {
 };
 
 class ApprovalService {
-  async approveProposal(proposal_id, approved_by = 'system') {
+  async approveProposal(proposal_id, approved_by = 'system', approval_notes = '') {
     const proposal = await Proposal.findOne({ proposal_id });
     if (!proposal || proposal.status !== 'REVIEWED') {
       throw new Error('Proposal must be reviewed first');
@@ -16,7 +16,9 @@ class ApprovalService {
 
     proposal.status = 'APPROVED';
     proposal.approved_by = approved_by;
+    proposal.approved_by_user_id = approved_by;
     proposal.approval_timestamp = new Date();
+    proposal.approval_notes = approval_notes;
     await proposal.save();
 
     console.log(JSON.stringify({
@@ -49,7 +51,7 @@ class ApprovalService {
     return proposal;
   }
 
-  async rejectProposal(proposal_id, rejection_reason, rejected_by = 'system') {
+  async rejectProposal(proposal_id, rejection_reason, rejected_by = 'system', rejection_notes = '') {
     const proposal = await Proposal.findOne({ proposal_id });
     if (!proposal || proposal.status !== 'REVIEWED') {
       throw new Error('Proposal must be reviewed first');
@@ -58,6 +60,7 @@ class ApprovalService {
     proposal.status = 'REJECTED';
     proposal.rejection_reason = rejection_reason;
     proposal.approved_by = rejected_by;
+    proposal.rejection_notes = rejection_notes;
     await proposal.save();
 
     return proposal;

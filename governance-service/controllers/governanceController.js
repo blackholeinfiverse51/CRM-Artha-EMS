@@ -46,8 +46,9 @@ class GovernanceController {
 
   async approveProposal(req, res) {
     try {
-      const { proposal_id, approved_by } = req.body;
-      const proposal = await approvalService.approveProposal(proposal_id, approved_by);
+      const { proposal_id, approval_notes } = req.body;
+      const approved_by = req.user?.id || req.body.approved_by;
+      const proposal = await approvalService.approveProposal(proposal_id, approved_by, approval_notes);
 
       res.json({
         success: true,
@@ -55,7 +56,8 @@ class GovernanceController {
           proposal_id: proposal.proposal_id,
           trace_id: proposal.trace_id,
           status: proposal.status,
-          approved_by: proposal.approved_by
+          approved_by: proposal.approved_by,
+          approval_timestamp: proposal.approval_timestamp
         }
       });
     } catch (error) {
@@ -65,8 +67,9 @@ class GovernanceController {
 
   async rejectProposal(req, res) {
     try {
-      const { proposal_id, rejection_reason, rejected_by } = req.body;
-      const proposal = await approvalService.rejectProposal(proposal_id, rejection_reason, rejected_by);
+      const { proposal_id, rejection_reason, rejection_notes } = req.body;
+      const rejected_by = req.user?.id || req.body.rejected_by;
+      const proposal = await approvalService.rejectProposal(proposal_id, rejection_reason, rejected_by, rejection_notes);
 
       res.json({
         success: true,
