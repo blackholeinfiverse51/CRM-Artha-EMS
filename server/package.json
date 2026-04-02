@@ -6,7 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js",
-    "test:niyantran:phase1": "node scripts/phase1NiyantranSchemaSmokeTest.js"
+    "test:niyantran:phase1": "node scripts/phase1NiyantranSchemaSmokeTest.js",
+    "test:niyantran:phase2": "node --test tests/niyantran/stateMachine.test.js"
   },
   "author": "",
   "license": "ISC",

@@ -20,7 +20,8 @@ const taskHistorySchema = new mongoose.Schema(
     taskId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'NiyantranTask',
-      required: true,
+      required: false,
+      default: null,
       index: true,
     },
     fromState: {

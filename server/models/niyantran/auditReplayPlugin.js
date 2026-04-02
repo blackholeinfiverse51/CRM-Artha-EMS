@@ -81,7 +81,9 @@ function applyAuditReplayFields(schema, options = {}) {
       this.updated_at = this.updated_at || now;
     } else {
       this.updated_at = now;
-      this.trace_id = generateTraceId(tracePrefix);
+      if (!this.isModified('trace_id')) {
+        this.trace_id = generateTraceId(tracePrefix);
+      }
       this.version += 1;
     }
 
@@ -104,7 +106,9 @@ function applyAuditReplayFields(schema, options = {}) {
     }
 
     update.$set.updated_at = nowUtc();
-    update.$set.trace_id = generateTraceId(tracePrefix);
+    if (typeof update.$set.trace_id === 'undefined') {
+      update.$set.trace_id = generateTraceId(tracePrefix);
+    }
 
     if (typeof update.$set.performed_by === 'undefined') {
       update.$set.performed_by = performedByDefault;
