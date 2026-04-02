@@ -30,6 +30,7 @@
 5.  [Local Setup & Deployment](#5-local-setup--deployment)
 6.  [Pending Tasks & Handover Plan](#6-pending-tasks--handover-plan)
 7.  [Phase 1 - Data Models (Niyantran)](#7-phase-1---data-models-niyantran)
+8.  [Phase 3 - NDA APIs (Niyantran)](#8-phase-3---nda-apis-niyantran)
 
 ---
 
@@ -820,3 +821,89 @@ npm run test:niyantran:phase1
 ```
 
 The script validates and (if `MONGODB_URI` is set) writes + cleans sample Candidate, NDA, Task, and TaskHistory records.
+
+## 8. Phase 3 - NDA APIs (Niyantran)
+
+Base route: `/api/niyantran/nda`
+
+All endpoints:
+
+-   Require authentication (`x-auth-token`)
+-   Emit `X-Trace-ID` response header
+-   Write trace events to agent-history-service
+-   Write append-only JSON payload to bucket path: `history/candidate-{candidateId}/{trace_id}.json`
+
+### 8.1 Upload NDA
+
+-   Method: `POST /api/niyantran/nda/upload`
+-   Content-Type: `multipart/form-data`
+-   Fields:
+    -   `candidateId` (required)
+    -   `file` (required, PDF only)
+
+Behavior:
+
+-   Uploads PDF to bucket path `ndas/{candidateId}/{ndaId}.pdf` (append-only).
+-   Creates NDA document with `status=pending`.
+-   Updates candidate `ndaStatus=pending` and `ndaDocumentId`.
+
+Response:
+
+```json
+{
+  "ndaId": "NDA-20260402-12345",
+  "fileUrl": "https://...",
+  "trace_id": "trace_xxxxx"
+}
+```
+
+### 8.2 Sign NDA
+
+-   Method: `POST /api/niyantran/nda/sign`
+-   Body:
+
+```json
+{
+  "ndaId": "NDA-20260402-12345",
+  "signatureHash": "sha256:abc...",
+  "ip": "127.0.0.1",
+  "userAgent": "Mozilla/5.0"
+}
+```
+
+Behavior:
+
+-   Updates NDA to `status=signed` with signature metadata.
+-   Updates candidate `ndaStatus=signed`.
+
+### 8.3 Submit NDA
+
+-   Method: `POST /api/niyantran/nda/submit`
+-   Body:
+
+```json
+{
+  "ndaId": "NDA-20260402-12345"
+}
+```
+
+Behavior:
+
+-   Requires NDA status to be `signed`.
+-   Sets NDA `status=submitted` and `submittedAt`.
+-   Updates candidate `ndaStatus=submitted`.
+-   Triggers deterministic candidate transition to `NDA_SUBMITTED` using Phase 2 state machine.
+
+Response includes:
+
+-   `ndaId`
+-   `status`
+-   `submittedAt`
+-   `candidateStatus`
+-   `trace_id`
+
+### 8.4 Immutability Rules
+
+-   NDA documents are never deleted.
+-   NDA documents are immutable after `submitted` status.
+-   Bucket uploads use append-only pathing; overwrite is disabled.

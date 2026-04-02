@@ -21,10 +21,17 @@ function generateHistoryId(referenceDate = new Date()) {
   return `TH-${year}${month}${day}-${random}`;
 }
 
-async function transitionCandidate(candidateId, toState, action, reason = null, performedBy = 'system') {
+async function transitionCandidate(
+  candidateId,
+  toState,
+  action,
+  reason = null,
+  performedBy = 'system',
+  options = {}
+) {
   const normalizedToState = normalizeState(toState);
   const normalizedAction = normalizeAction(action);
-  const actionTraceId = generateTraceId('trace');
+  const actionTraceId = options.traceId || generateTraceId('trace');
 
   const candidate = await Candidate.findById(candidateId).lean();
 
