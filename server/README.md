@@ -29,6 +29,7 @@
 4.  [Services (Business Logic)](#4-services-business-logic)
 5.  [Local Setup & Deployment](#5-local-setup--deployment)
 6.  [Pending Tasks & Handover Plan](#6-pending-tasks--handover-plan)
+7.  [Phase 1 - Data Models (Niyantran)](#7-phase-1---data-models-niyantran)
 
 ---
 
@@ -679,3 +680,143 @@ This section outlines the key features and improvements that are currently pendi
 
 -   The current password storage is plain text in the database. This is a critical security flaw and **must be replaced with a strong hashing algorithm (e.g., bcrypt)** before any production deployment.
 -   Error handling in some older routes could be more robust.
+
+## 7. Phase 1 - Data Models (Niyantran)
+
+This section defines the Phase 1 candidate lifecycle data model used by Sampada + SETU.
+
+### 7.1 Design Principles
+
+-   Single source of truth: Candidate document tracks the current lifecycle snapshot.
+-   Auditability: Every collection includes `trace_id`, `version`, `created_at`, `updated_at`, and `performed_by`.
+-   Determinism: Status fields use strict enums and transition guards.
+-   Replay safety: Idempotent same-state writes are accepted; every mutation rotates `trace_id` and increments `version`.
+-   Governance readiness: `metadata` fields allow Sarathi PDP decisions and policy context.
+-   Append-only history: Task history entries are immutable after insertion.
+
+### 7.2 Collections Implemented
+
+-   `candidates` via `models/niyantran/Candidate.js`
+-   `ndas` via `models/niyantran/NDA.js`
+-   `tasks` via `models/niyantran/Task.js`
+-   `task_histories` via `models/niyantran/TaskHistory.js`
+-   Shared audit/replay plugin via `models/niyantran/auditReplayPlugin.js`
+
+### 7.3 Mermaid Schema Diagram
+
+```mermaid
+erDiagram
+    CANDIDATES ||--o{ NDAS : has
+    CANDIDATES ||--o{ TASKS : receives
+    CANDIDATES ||--o{ TASK_HISTORIES : logs
+    TASKS ||--o{ TASK_HISTORIES : transitions
+
+    CANDIDATES {
+      ObjectId _id
+      string candidateId
+      string name
+      string email
+      string phone
+      string role
+      string status
+      ObjectId currentTaskId
+      string ndaStatus
+      ObjectId ndaDocumentId
+      object metadata
+      string trace_id
+      number version
+      date created_at
+      date updated_at
+      string performed_by
+      date lastStateChangeAt
+    }
+
+    NDAS {
+      ObjectId _id
+      ObjectId candidateId
+      string ndaId
+      string status
+      string fileUrl
+      date signedAt
+      date submittedAt
+      string signedBy
+      object signatureMetadata
+      string trace_id
+      number version
+      date created_at
+      date updated_at
+      string performed_by
+    }
+
+    TASKS {
+      ObjectId _id
+      string taskId
+      ObjectId candidateId
+      string title
+      string description
+      string instructions
+      array attachedFiles
+      string status
+      date assignedAt
+      date dueDate
+      date submittedAt
+      object submission
+      boolean isActive
+      string trace_id
+      number version
+      date created_at
+      date updated_at
+      string performed_by
+      string assignedBy
+    }
+
+    TASK_HISTORIES {
+      ObjectId _id
+      string historyId
+      ObjectId candidateId
+      ObjectId taskId
+      string fromState
+      string toState
+      string action
+      string reason
+      string performed_by
+      date performed_at
+      string trace_id
+      number version
+      date created_at
+      date updated_at
+      object metadata
+    }
+```
+
+### 7.4 State Controls
+
+-   Candidate transition guard implemented in `Candidate.js`.
+-   NDA transition guard and immutability-after-submission implemented in `NDA.js`.
+-   Task transition guard and active/terminal consistency implemented in `Task.js`.
+-   TaskHistory update/delete operations are blocked to enforce append-only behavior.
+
+### 7.5 Single Active Task Enforcement
+
+`tasks` collection includes a partial unique index:
+
+-   `{ candidateId: 1, isActive: 1 }` with `partialFilterExpression: { isActive: true }`
+
+This guarantees at most one active task per candidate at database level.
+
+### 7.6 Required Indexes
+
+-   `candidateId` indexed in all relevant collections.
+-   `status` indexed in Candidate/NDA/Task.
+-   `isActive` indexed in Task.
+-   `trace_id` indexed in all four collections.
+
+### 7.7 Smoke Test
+
+Run the Phase 1 smoke test from `server/`:
+
+```bash
+npm run test:niyantran:phase1
+```
+
+The script validates and (if `MONGODB_URI` is set) writes + cleans sample Candidate, NDA, Task, and TaskHistory records.
