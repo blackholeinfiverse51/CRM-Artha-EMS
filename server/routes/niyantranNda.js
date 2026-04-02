@@ -1,6 +1,8 @@
 const express = require('express');
 const multer = require('multer');
 const auth = require('../middleware/auth');
+const { executeMutationWithOptionalIdempotency } = require('../services/niyantran/idempotencyService');
+const { resolveTraceId } = require('../services/niyantran/auditService');
 const {
   createNdaFromUpload,
   signNda,
@@ -34,23 +36,49 @@ function setTraceHeader(res, traceId) {
   }
 }
 
+function getIdempotencyKey(req) {
+  return req.header('x-idempotency-key') || (req.body && req.body.idempotencyKey) || null;
+}
+
 router.post('/upload', auth, upload.single('file'), async (req, res) => {
   try {
     const performedBy = extractPerformedBy(req);
+    const traceId = resolveTraceId(req.header('x-trace-id') || (req.body && req.body.trace_id) || null);
 
-    const result = await createNdaFromUpload({
+    const wrapped = await executeMutationWithOptionalIdempotency({
+      idempotencyKey: getIdempotencyKey(req),
+      action: 'upload_nda',
       candidateId: req.body.candidateId,
-      file: req.file,
-      performedBy,
-      incomingTraceId: req.header('x-trace-id') || null,
+      traceId,
+      requestPayload: {
+        candidateId: req.body.candidateId,
+        fileName: req.file ? req.file.originalname : null,
+        fileSize: req.file ? req.file.size : null,
+      },
+      handler: async () => {
+        const result = await createNdaFromUpload({
+          candidateId: req.body.candidateId,
+          file: req.file,
+          performedBy,
+          incomingTraceId: traceId,
+        });
+
+        return {
+          statusCode: 201,
+          trace_id: result.trace_id,
+          responsePayload: {
+            ndaId: result.ndaId,
+            fileUrl: result.fileUrl,
+            trace_id: result.trace_id,
+          },
+        };
+      },
     });
 
-    setTraceHeader(res, result.trace_id);
-
-    return res.status(201).json({
-      ndaId: result.ndaId,
-      fileUrl: result.fileUrl,
-      trace_id: result.trace_id,
+    setTraceHeader(res, wrapped.trace_id);
+    return res.status(wrapped.statusCode).json({
+      ...wrapped.responsePayload,
+      replayed: wrapped.replayed,
     });
   } catch (error) {
     return res.status(400).json({
@@ -62,19 +90,42 @@ router.post('/upload', auth, upload.single('file'), async (req, res) => {
 router.post('/sign', auth, async (req, res) => {
   try {
     const performedBy = extractPerformedBy(req);
+    const traceId = resolveTraceId(req.header('x-trace-id') || (req.body && req.body.trace_id) || null);
 
-    const result = await signNda({
-      ndaId: req.body.ndaId,
-      signatureHash: req.body.signatureHash,
-      ip: req.body.ip || req.ip,
-      userAgent: req.body.userAgent || req.headers['user-agent'],
-      performedBy,
-      incomingTraceId: req.header('x-trace-id') || null,
+    const wrapped = await executeMutationWithOptionalIdempotency({
+      idempotencyKey: getIdempotencyKey(req),
+      action: 'sign_nda',
+      traceId,
+      requestPayload: {
+        ndaId: req.body.ndaId,
+        signatureHash: req.body.signatureHash,
+        ip: req.body.ip || req.ip,
+        userAgent: req.body.userAgent || req.headers['user-agent'],
+      },
+      handler: async () => {
+        const result = await signNda({
+          ndaId: req.body.ndaId,
+          signatureHash: req.body.signatureHash,
+          ip: req.body.ip || req.ip,
+          userAgent: req.body.userAgent || req.headers['user-agent'],
+          performedBy,
+          incomingTraceId: traceId,
+        });
+
+        return {
+          statusCode: 200,
+          trace_id: result.trace_id,
+          responsePayload: result,
+        };
+      },
     });
 
-    setTraceHeader(res, result.trace_id);
+    setTraceHeader(res, wrapped.trace_id);
 
-    return res.json(result);
+    return res.status(wrapped.statusCode).json({
+      ...wrapped.responsePayload,
+      replayed: wrapped.replayed,
+    });
   } catch (error) {
     return res.status(400).json({
       error: error.message,
@@ -85,16 +136,36 @@ router.post('/sign', auth, async (req, res) => {
 router.post('/submit', auth, async (req, res) => {
   try {
     const performedBy = extractPerformedBy(req);
+    const traceId = resolveTraceId(req.header('x-trace-id') || (req.body && req.body.trace_id) || null);
 
-    const result = await submitNda({
-      ndaId: req.body.ndaId,
-      performedBy,
-      incomingTraceId: req.header('x-trace-id') || null,
+    const wrapped = await executeMutationWithOptionalIdempotency({
+      idempotencyKey: getIdempotencyKey(req),
+      action: 'submit_nda',
+      traceId,
+      requestPayload: {
+        ndaId: req.body.ndaId,
+      },
+      handler: async () => {
+        const result = await submitNda({
+          ndaId: req.body.ndaId,
+          performedBy,
+          incomingTraceId: traceId,
+        });
+
+        return {
+          statusCode: 200,
+          trace_id: result.trace_id,
+          responsePayload: result,
+        };
+      },
     });
 
-    setTraceHeader(res, result.trace_id);
+    setTraceHeader(res, wrapped.trace_id);
 
-    return res.json(result);
+    return res.status(wrapped.statusCode).json({
+      ...wrapped.responsePayload,
+      replayed: wrapped.replayed,
+    });
   } catch (error) {
     return res.status(400).json({
       error: error.message,

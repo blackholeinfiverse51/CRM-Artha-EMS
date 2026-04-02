@@ -1,5 +1,7 @@
 const express = require('express');
 const auth = require('../middleware/auth');
+const { executeMutationWithOptionalIdempotency } = require('../services/niyantran/idempotencyService');
+const { resolveTraceId } = require('../services/niyantran/auditService');
 const {
   assignTask,
   editTask,
@@ -22,7 +24,11 @@ function setTraceHeader(res, traceId) {
 }
 
 function getTraceFromRequest(req) {
-  return req.header('x-trace-id') || req.body.trace_id || null;
+  return req.header('x-trace-id') || (req.body && req.body.trace_id) || null;
+}
+
+function getIdempotencyKey(req) {
+  return req.header('x-idempotency-key') || (req.body && req.body.idempotencyKey) || null;
 }
 
 function handleError(res, error) {
@@ -36,19 +42,40 @@ function handleError(res, error) {
 router.post('/assign', auth, async (req, res) => {
   try {
     const performedBy = extractPerformedBy(req);
-    const result = await assignTask({
-      candidateId: req.body.candidateId,
-      title: req.body.title,
-      description: req.body.description,
-      instructions: req.body.instructions,
-      attachedFiles: Array.isArray(req.body.attachedFiles) ? req.body.attachedFiles : [],
-      dueDate: req.body.dueDate || null,
-      performedBy,
-      incomingTraceId: getTraceFromRequest(req),
+    const traceId = resolveTraceId(getTraceFromRequest(req));
+    const candidateId = req.body.candidateId;
+
+    const wrapped = await executeMutationWithOptionalIdempotency({
+      idempotencyKey: getIdempotencyKey(req),
+      action: 'assign_task',
+      candidateId,
+      traceId,
+      requestPayload: req.body,
+      handler: async () => {
+        const result = await assignTask({
+          candidateId,
+          title: req.body.title,
+          description: req.body.description,
+          instructions: req.body.instructions,
+          attachedFiles: Array.isArray(req.body.attachedFiles) ? req.body.attachedFiles : [],
+          dueDate: req.body.dueDate || null,
+          performedBy,
+          incomingTraceId: traceId,
+        });
+
+        return {
+          statusCode: 201,
+          trace_id: result.trace_id,
+          responsePayload: result,
+        };
+      },
     });
 
-    setTraceHeader(res, result.trace_id);
-    return res.status(201).json(result);
+    setTraceHeader(res, wrapped.trace_id);
+    return res.status(wrapped.statusCode).json({
+      ...wrapped.responsePayload,
+      replayed: wrapped.replayed,
+    });
   } catch (error) {
     return handleError(res, error);
   }
@@ -57,15 +84,39 @@ router.post('/assign', auth, async (req, res) => {
 router.patch('/:taskId', auth, async (req, res) => {
   try {
     const performedBy = extractPerformedBy(req);
-    const result = await editTask({
-      taskIdentifier: req.params.taskId,
-      updates: req.body || {},
-      performedBy,
-      incomingTraceId: getTraceFromRequest(req),
+    const traceId = resolveTraceId(getTraceFromRequest(req));
+
+    const wrapped = await executeMutationWithOptionalIdempotency({
+      idempotencyKey: getIdempotencyKey(req),
+      action: 'edit_task',
+      candidateId: req.body.candidateId || null,
+      taskId: req.params.taskId,
+      traceId,
+      requestPayload: {
+        taskId: req.params.taskId,
+        updates: req.body || {},
+      },
+      handler: async () => {
+        const result = await editTask({
+          taskIdentifier: req.params.taskId,
+          updates: req.body || {},
+          performedBy,
+          incomingTraceId: traceId,
+        });
+
+        return {
+          statusCode: 200,
+          trace_id: result.trace_id,
+          responsePayload: result,
+        };
+      },
     });
 
-    setTraceHeader(res, result.trace_id);
-    return res.json(result);
+    setTraceHeader(res, wrapped.trace_id);
+    return res.status(wrapped.statusCode).json({
+      ...wrapped.responsePayload,
+      replayed: wrapped.replayed,
+    });
   } catch (error) {
     return handleError(res, error);
   }
@@ -74,15 +125,39 @@ router.patch('/:taskId', auth, async (req, res) => {
 router.delete('/:taskId', auth, async (req, res) => {
   try {
     const performedBy = extractPerformedBy(req);
-    const result = await softDeleteTask({
-      taskIdentifier: req.params.taskId,
-      performedBy,
-      reason: req.body && req.body.reason ? req.body.reason : 'Task deleted by recruiter',
-      incomingTraceId: getTraceFromRequest(req),
+    const traceId = resolveTraceId(getTraceFromRequest(req));
+
+    const wrapped = await executeMutationWithOptionalIdempotency({
+      idempotencyKey: getIdempotencyKey(req),
+      action: 'delete_task',
+      candidateId: (req.body && req.body.candidateId) || null,
+      taskId: req.params.taskId,
+      traceId,
+      requestPayload: {
+        taskId: req.params.taskId,
+        reason: req.body && req.body.reason ? req.body.reason : 'Task deleted by recruiter',
+      },
+      handler: async () => {
+        const result = await softDeleteTask({
+          taskIdentifier: req.params.taskId,
+          performedBy,
+          reason: req.body && req.body.reason ? req.body.reason : 'Task deleted by recruiter',
+          incomingTraceId: traceId,
+        });
+
+        return {
+          statusCode: 200,
+          trace_id: result.trace_id,
+          responsePayload: result,
+        };
+      },
     });
 
-    setTraceHeader(res, result.trace_id);
-    return res.json(result);
+    setTraceHeader(res, wrapped.trace_id);
+    return res.status(wrapped.statusCode).json({
+      ...wrapped.responsePayload,
+      replayed: wrapped.replayed,
+    });
   } catch (error) {
     return handleError(res, error);
   }
@@ -91,19 +166,47 @@ router.delete('/:taskId', auth, async (req, res) => {
 router.post('/:taskId/reassign', auth, async (req, res) => {
   try {
     const performedBy = extractPerformedBy(req);
-    const result = await reassignTask({
-      taskIdentifier: req.params.taskId,
-      title: req.body.title,
-      description: req.body.description,
-      instructions: req.body.instructions,
-      attachedFiles: req.body.attachedFiles,
-      dueDate: req.body.dueDate,
-      performedBy,
-      incomingTraceId: getTraceFromRequest(req),
+    const traceId = resolveTraceId(getTraceFromRequest(req));
+
+    const wrapped = await executeMutationWithOptionalIdempotency({
+      idempotencyKey: getIdempotencyKey(req),
+      action: 'reassign_task',
+      candidateId: req.body.candidateId || null,
+      taskId: req.params.taskId,
+      traceId,
+      requestPayload: {
+        taskId: req.params.taskId,
+        title: req.body.title,
+        description: req.body.description,
+        instructions: req.body.instructions,
+        attachedFiles: req.body.attachedFiles,
+        dueDate: req.body.dueDate,
+      },
+      handler: async () => {
+        const result = await reassignTask({
+          taskIdentifier: req.params.taskId,
+          title: req.body.title,
+          description: req.body.description,
+          instructions: req.body.instructions,
+          attachedFiles: req.body.attachedFiles,
+          dueDate: req.body.dueDate,
+          performedBy,
+          incomingTraceId: traceId,
+        });
+
+        return {
+          statusCode: 201,
+          trace_id: result.trace_id,
+          responsePayload: result,
+        };
+      },
     });
 
-    setTraceHeader(res, result.trace_id);
-    return res.status(201).json(result);
+    setTraceHeader(res, wrapped.trace_id);
+    return res.status(wrapped.statusCode).json({
+      ...wrapped.responsePayload,
+      replayed: wrapped.replayed,
+    });
   } catch (error) {
     return handleError(res, error);
   }
@@ -127,18 +230,13 @@ router.post('/submit', auth, async (req, res) => {
   try {
     const performedBy = extractPerformedBy(req);
 
-    const idempotencyKey =
-      req.header('x-idempotency-key') ||
-      req.body.idempotencyKey ||
-      null;
-
     const result = await submitTask({
       taskIdentifier: req.body.taskId,
       candidateId: req.body.candidateId,
       submissionType: req.body.submissionType,
       content: req.body.content,
       fileUrls: Array.isArray(req.body.fileUrls) ? req.body.fileUrls : [],
-      idempotencyKey,
+      idempotencyKey: getIdempotencyKey(req),
       performedBy,
       incomingTraceId: getTraceFromRequest(req),
     });

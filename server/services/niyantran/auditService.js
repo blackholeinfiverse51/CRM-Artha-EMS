@@ -95,7 +95,51 @@ async function logAction({
   };
 }
 
+async function logFailure({
+  candidateId,
+  action,
+  performedBy,
+  trace_id,
+  error,
+  metadata = {},
+}) {
+  const traceId = resolveTraceId(trace_id);
+  const safeCandidateId = candidateId || 'unknown';
+
+  const payload = {
+    candidateId: safeCandidateId,
+    action: `${action}_failed`,
+    performedBy,
+    trace_id: traceId,
+    error: {
+      message: error && error.message ? error.message : 'Unknown error',
+      name: error && error.name ? error.name : 'Error',
+    },
+    metadata,
+    failedAt: new Date().toISOString(),
+  };
+
+  try {
+    await pushToAgentHistory(traceId, `${action}_failed`, payload);
+  } catch (pushError) {
+    // Keep bucket logging best-effort even when history service is unavailable.
+  }
+
+  let bucketLogUrl = null;
+  try {
+    bucketLogUrl = await writeHistoryPayloadToBucket(safeCandidateId, traceId, payload);
+  } catch (bucketError) {
+    // Failure logging should never mask original mutation errors.
+  }
+
+  return {
+    trace_id: traceId,
+    bucketLogUrl,
+  };
+}
+
 module.exports = {
   logAction,
+  logFailure,
   resolveTraceId,
 };

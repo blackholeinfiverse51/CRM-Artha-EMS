@@ -34,6 +34,15 @@
 9.  [Phase 4 - Recruiter Task APIs](#9-phase-4---recruiter-task-apis)
 10. [Phase 5 - Candidate Task APIs](#10-phase-5---candidate-task-apis)
 11. [Phase 6 - Traceability Integration](#11-phase-6---traceability-integration)
+12. [Phase 7 - Governance Hook](#12-phase-7---governance-hook)
+13. [Phase 8 - Notification Engine](#13-phase-8---notification-engine)
+14. [Phase 9 - SETU Sync Layer](#14-phase-9---setu-sync-layer)
+15. [Phase 10 - Failure and Replay Safety](#15-phase-10---failure-and-replay-safety)
+16. [Niyantran Architecture Diagram](#16-niyantran-architecture-diagram)
+17. [Niyantran State Machine Diagram](#17-niyantran-state-machine-diagram)
+18. [Integration Points](#18-integration-points)
+19. [Run and Full Flow Test](#19-run-and-full-flow-test)
+20. [Postman and Demo Artifacts](#20-postman-and-demo-artifacts)
 
 ---
 
@@ -983,7 +992,7 @@ Body:
 
 Headers:
 
--   `x-idempotency-key` (required)
+-   `x-idempotency-key` (optional)
 
 Rules:
 
@@ -1005,3 +1014,147 @@ Implemented for all mutating Niyantran APIs in Phase 3/4/5:
 Reusable logging service:
 
 -   `services/niyantran/auditService.logAction({ candidateId, action, fromState, toState, performedBy, trace_id, metadata })`
+
+## 12. Phase 7 - Governance Hook
+
+-   Governance service: `services/niyantran/governanceService.js`
+-   `checkPermission(action, context): Promise<boolean>` implemented.
+-   `checkPermissionWithDecision(action, context)` implemented for metadata-rich decisions.
+-   Transition, assignment, reassignment, submission, and NDA lifecycle mutations call governance before write.
+-   Sarathi decision metadata is logged in `TaskHistory.metadata.sarathiDecision`.
+
+## 13. Phase 8 - Notification Engine
+
+-   Notification service: `services/niyantran/notificationService.js`
+-   Reminder scheduler: `services/niyantran/reminderScheduler.js`
+-   Routes: `routes/niyantranNotifications.js`
+
+Supported events:
+
+-   `task_assigned`
+-   `task_due_reminder` (within next 24h)
+-   `nda_pending_reminder`
+-   `task_submitted` (to recruiter)
+
+Manual trigger endpoint:
+
+-   `POST /api/niyantran/notifications/manual-trigger`
+
+Optional reminder run endpoint:
+
+-   `POST /api/niyantran/notifications/run-reminders`
+
+## 14. Phase 9 - SETU Sync Layer
+
+Route base: `/api/setu`
+
+Endpoints:
+
+-   `GET /api/setu/candidates`
+-   `GET /api/setu/candidates/:candidateId`
+-   `GET /api/setu/tasks`
+-   `GET /api/setu/dashboard-feed`
+
+Rules implemented:
+
+-   Minimal response shape for frontend dashboards.
+-   `trace_id` included in response body and `X-Trace-ID` header.
+-   Optional read preference support via env: `NIYANTRAN_SETU_READ_PREFERENCE`.
+
+## 15. Phase 10 - Failure and Replay Safety
+
+-   Idempotency model: `models/niyantran/IdempotencyKey.js`
+-   Idempotency service: `services/niyantran/idempotencyService.js`
+-   Mutating NDA and Task endpoints accept optional idempotency key:
+  -   Header: `x-idempotency-key`
+  -   Body: `idempotencyKey`
+-   Duplicate key + same payload returns cached response.
+-   Duplicate key + different payload is rejected.
+-   Critical mutation flows use optimistic locking and rollback failure logging.
+-   Failure logging writes to bucket and attempts history-service forwarding via `auditService.logFailure`.
+
+Idempotency tests:
+
+-   `npm run test:niyantran:idempotency`
+
+## 16. Niyantran Architecture Diagram
+
+```mermaid
+flowchart LR
+  A[Client / Sampada / SETU] --> B[Workflow Server API]
+  B --> C[State Machine Service]
+  B --> D[Governance Service - Sarathi Mock]
+  B --> E[Notification Service]
+  B --> F[Idempotency Service]
+  B --> G[(MongoDB - candidates ndas tasks histories idempotency)]
+  B --> H[Agent History Service]
+  B --> I[Bucket Logs - Cloudinary Raw]
+  E --> J[SMTP / Email Provider]
+
+  D --> C
+  C --> G
+  F --> G
+  B --> C
+  B --> F
+```
+
+## 17. Niyantran State Machine Diagram
+
+```mermaid
+stateDiagram-v2
+  [*] --> APPLIED
+  APPLIED --> SHORTLISTED
+  SHORTLISTED --> NDA_PENDING
+  NDA_PENDING --> NDA_SUBMITTED
+  NDA_SUBMITTED --> TASK_ASSIGNED
+  TASK_ASSIGNED --> IN_PROGRESS
+  IN_PROGRESS --> SUBMITTED
+  SUBMITTED --> REVIEWED
+  REVIEWED --> HIRED
+  REVIEWED --> REJECTED
+```
+
+## 18. Integration Points
+
+-   Sarathi PDP (mocked): `services/niyantran/governanceService.js`
+-   Bucket append-only logs: `services/niyantran/auditService.js`
+-   Insight Bridge trace propagation: request `x-trace-id` and response `X-Trace-ID`
+-   Agent history integration: POST to `agent-history-service` proposal endpoint
+-   SETU read APIs: `routes/setuNiyantran.js`
+
+## 19. Run and Full Flow Test
+
+### 19.1 Prerequisites
+
+-   Configure `.env` with MongoDB, JWT, Cloudinary, and Email credentials.
+-   Start `agent-history-service` on port `5003` or set `AGENT_HISTORY_SERVICE_URL`.
+
+### 19.2 Start Server
+
+```bash
+cd workflow-blackhole/server
+npm start
+```
+
+### 19.3 Test Suites
+
+```bash
+npm run test:niyantran:all
+```
+
+### 19.4 Full Flow (API)
+
+1. Upload NDA
+2. Sign NDA
+3. Submit NDA
+4. Assign Task
+5. Submit Task with idempotency key
+6. Re-submit same request with same idempotency key (replay)
+7. Verify SETU dashboard feed
+8. Verify trace in history service + bucket log path
+
+## 20. Postman and Demo Artifacts
+
+-   Postman collection: `postman/niyantran-phases-2-10.postman_collection.json`
+-   Demo video script/runbook: `NIYANTRAN_DEMO_VIDEO_SCRIPT.md`
+-   Idempotency replay demo script: `scripts/phase10IdempotencyReplayDemo.js`

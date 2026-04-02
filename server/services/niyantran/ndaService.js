@@ -1,7 +1,8 @@
 const { v2: cloudinary } = require('cloudinary');
 const { Candidate, NiyantranNDA } = require('../../models/niyantran');
 const { transitionCandidate } = require('./transitionService');
-const { resolveTraceId, logAction } = require('./auditService');
+const { resolveTraceId, logAction, logFailure } = require('./auditService');
+const governanceService = require('./governanceService');
 
 let isCloudinaryConfigured = false;
 
@@ -61,207 +62,284 @@ async function uploadNdaToBucket(candidateId, ndaId, fileBuffer) {
 }
 
 async function createNdaFromUpload({ candidateId, file, performedBy, incomingTraceId }) {
-  if (!candidateId) {
-    throw new Error('candidateId is required');
-  }
-
-  if (!file || !file.buffer) {
-    throw new Error('NDA PDF file is required');
-  }
-
-  const candidate = await Candidate.findById(candidateId);
-  if (!candidate) {
-    throw new Error('Candidate not found');
-  }
-
   const traceId = resolveTraceId(incomingTraceId);
-  const ndaId = await generateNdaId();
-  const fileUrl = await uploadNdaToBucket(candidateId, ndaId, file.buffer);
 
-  const ndaDoc = await NiyantranNDA.create({
-    candidateId,
-    ndaId,
-    status: 'pending',
-    fileUrl,
-    performed_by: performedBy,
-    trace_id: traceId,
-  });
+  try {
+    if (!candidateId) {
+      throw new Error('candidateId is required');
+    }
 
-  await Candidate.findByIdAndUpdate(
-    candidateId,
-    {
-      $set: {
-        ndaStatus: 'pending',
-        ndaDocumentId: ndaDoc._id,
-        performed_by: performedBy,
-        trace_id: traceId,
-      },
-    },
-    { new: true, runValidators: true }
-  );
+    if (!file || !file.buffer) {
+      throw new Error('NDA PDF file is required');
+    }
 
-  await logAction({
-    candidateId,
-    action: 'upload_nda',
-    fromState: candidate.status,
-    toState: candidate.status,
-    performedBy,
-    trace_id: traceId,
-    metadata: {
+    const candidate = await Candidate.findById(candidateId);
+    if (!candidate) {
+      throw new Error('Candidate not found');
+    }
+
+    const governanceDecision = await governanceService.checkPermissionWithDecision('upload_nda', {
+      candidateId,
+      performedBy,
+      trace_id: traceId,
+    });
+
+    if (!governanceDecision.allowed) {
+      throw new Error('Governance denied upload_nda');
+    }
+
+    const ndaId = await generateNdaId();
+    const fileUrl = await uploadNdaToBucket(candidateId, ndaId, file.buffer);
+
+    const ndaDoc = await NiyantranNDA.create({
+      candidateId,
       ndaId,
-      ndaDocumentId: ndaDoc._id,
+      status: 'pending',
       fileUrl,
-    },
-  });
+      performed_by: performedBy,
+      trace_id: traceId,
+    });
 
-  return {
-    ndaId,
-    fileUrl,
-    trace_id: traceId,
-    ndaDocumentId: ndaDoc._id,
-  };
+    await Candidate.findByIdAndUpdate(
+      candidateId,
+      {
+        $set: {
+          ndaStatus: 'pending',
+          ndaDocumentId: ndaDoc._id,
+          performed_by: performedBy,
+          trace_id: traceId,
+        },
+      },
+      { new: true, runValidators: true }
+    );
+
+    await logAction({
+      candidateId,
+      action: 'upload_nda',
+      fromState: candidate.status,
+      toState: candidate.status,
+      performedBy,
+      trace_id: traceId,
+      metadata: {
+        ndaId,
+        ndaDocumentId: ndaDoc._id,
+        fileUrl,
+        sarathiDecision: governanceDecision.decision,
+      },
+    });
+
+    return {
+      ndaId,
+      fileUrl,
+      trace_id: traceId,
+      ndaDocumentId: ndaDoc._id,
+    };
+  } catch (error) {
+    await logFailure({
+      candidateId,
+      action: 'upload_nda',
+      performedBy,
+      trace_id: traceId,
+      error,
+    });
+    throw error;
+  }
 }
 
 async function signNda({ ndaId, signatureHash, ip, userAgent, performedBy, incomingTraceId }) {
-  if (!ndaId) {
-    throw new Error('ndaId is required');
-  }
-
-  if (!signatureHash) {
-    throw new Error('signatureHash is required');
-  }
-
-  const ndaDoc = await NiyantranNDA.findOne({ ndaId });
-  if (!ndaDoc) {
-    throw new Error('NDA not found');
-  }
-
-  if (ndaDoc.status === 'submitted') {
-    throw new Error('NDA is immutable after submitted status');
-  }
-
   const traceId = resolveTraceId(incomingTraceId);
-  const signedAt = new Date();
 
-  ndaDoc.status = 'signed';
-  ndaDoc.signedAt = signedAt;
-  ndaDoc.signedBy = performedBy;
-  ndaDoc.signatureMetadata = {
-    signatureHash,
-    timestamp: signedAt,
-    ip: ip || null,
-    userAgent: userAgent || null,
-  };
-  ndaDoc.performed_by = performedBy;
-  ndaDoc.trace_id = traceId;
+  try {
+    if (!ndaId) {
+      throw new Error('ndaId is required');
+    }
 
-  await ndaDoc.save();
+    if (!signatureHash) {
+      throw new Error('signatureHash is required');
+    }
 
-  const candidate = await Candidate.findByIdAndUpdate(
-    ndaDoc.candidateId,
-    {
-      $set: {
-        ndaStatus: 'signed',
-        ndaDocumentId: ndaDoc._id,
-        performed_by: performedBy,
-        trace_id: traceId,
-      },
-    },
-    { new: true, runValidators: true }
-  );
+    const ndaDoc = await NiyantranNDA.findOne({ ndaId });
+    if (!ndaDoc) {
+      throw new Error('NDA not found');
+    }
 
-  await logAction({
-    candidateId: String(ndaDoc.candidateId),
-    action: 'sign_nda',
-    fromState: candidate ? candidate.status : null,
-    toState: candidate ? candidate.status : null,
-    performedBy,
-    trace_id: traceId,
-    metadata: {
+    if (ndaDoc.status === 'submitted') {
+      throw new Error('NDA is immutable after submitted status');
+    }
+
+    const governanceDecision = await governanceService.checkPermissionWithDecision('sign_nda', {
+      candidateId: String(ndaDoc.candidateId),
       ndaId,
-      signedAt,
-      signatureHash,
-    },
-  });
+      performedBy,
+      trace_id: traceId,
+    });
 
-  return {
-    ndaId,
-    status: ndaDoc.status,
-    signedAt: ndaDoc.signedAt,
-    trace_id: traceId,
-  };
+    if (!governanceDecision.allowed) {
+      throw new Error('Governance denied sign_nda');
+    }
+
+    const signedAt = new Date();
+
+    ndaDoc.status = 'signed';
+    ndaDoc.signedAt = signedAt;
+    ndaDoc.signedBy = performedBy;
+    ndaDoc.signatureMetadata = {
+      signatureHash,
+      timestamp: signedAt,
+      ip: ip || null,
+      userAgent: userAgent || null,
+    };
+    ndaDoc.performed_by = performedBy;
+    ndaDoc.trace_id = traceId;
+
+    await ndaDoc.save();
+
+    const candidate = await Candidate.findByIdAndUpdate(
+      ndaDoc.candidateId,
+      {
+        $set: {
+          ndaStatus: 'signed',
+          ndaDocumentId: ndaDoc._id,
+          performed_by: performedBy,
+          trace_id: traceId,
+        },
+      },
+      { new: true, runValidators: true }
+    );
+
+    await logAction({
+      candidateId: String(ndaDoc.candidateId),
+      action: 'sign_nda',
+      fromState: candidate ? candidate.status : null,
+      toState: candidate ? candidate.status : null,
+      performedBy,
+      trace_id: traceId,
+      metadata: {
+        ndaId,
+        signedAt,
+        signatureHash,
+        sarathiDecision: governanceDecision.decision,
+      },
+    });
+
+    return {
+      ndaId,
+      status: ndaDoc.status,
+      signedAt: ndaDoc.signedAt,
+      trace_id: traceId,
+    };
+  } catch (error) {
+    await logFailure({
+      candidateId: null,
+      action: 'sign_nda',
+      performedBy,
+      trace_id: traceId,
+      error,
+      metadata: {
+        ndaId,
+      },
+    });
+    throw error;
+  }
 }
 
 async function submitNda({ ndaId, performedBy, incomingTraceId }) {
-  if (!ndaId) {
-    throw new Error('ndaId is required');
-  }
-
-  const ndaDoc = await NiyantranNDA.findOne({ ndaId });
-  if (!ndaDoc) {
-    throw new Error('NDA not found');
-  }
-
-  if (ndaDoc.status === 'submitted') {
-    throw new Error('NDA is already submitted');
-  }
-
-  if (ndaDoc.status !== 'signed') {
-    throw new Error('NDA must be signed before submission');
-  }
-
   const traceId = resolveTraceId(incomingTraceId);
-  const submittedAt = new Date();
 
-  ndaDoc.status = 'submitted';
-  ndaDoc.submittedAt = submittedAt;
-  ndaDoc.performed_by = performedBy;
-  ndaDoc.trace_id = traceId;
-  await ndaDoc.save();
+  try {
+    if (!ndaId) {
+      throw new Error('ndaId is required');
+    }
 
-  await Candidate.findByIdAndUpdate(
-    ndaDoc.candidateId,
-    {
-      $set: {
-        ndaStatus: 'submitted',
-        ndaDocumentId: ndaDoc._id,
-        performed_by: performedBy,
-        trace_id: traceId,
-      },
-    },
-    { new: true, runValidators: true }
-  );
+    const ndaDoc = await NiyantranNDA.findOne({ ndaId });
+    if (!ndaDoc) {
+      throw new Error('NDA not found');
+    }
 
-  const transitionResult = await transitionCandidate(
-    ndaDoc.candidateId,
-    'NDA_SUBMITTED',
-    'submit_nda',
-    'NDA submitted via API',
-    performedBy,
-    { traceId }
-  );
+    if (ndaDoc.status === 'submitted') {
+      throw new Error('NDA is already submitted');
+    }
 
-  await logAction({
-    candidateId: String(ndaDoc.candidateId),
-    action: 'submit_nda',
-    fromState: 'NDA_PENDING',
-    toState: 'NDA_SUBMITTED',
-    performedBy,
-    trace_id: traceId,
-    metadata: {
+    if (ndaDoc.status !== 'signed') {
+      throw new Error('NDA must be signed before submission');
+    }
+
+    const governanceDecision = await governanceService.checkPermissionWithDecision('submit_nda', {
+      candidateId: String(ndaDoc.candidateId),
       ndaId,
-      submittedAt,
-      taskHistoryId: transitionResult.history.historyId,
-    },
-  });
+      performedBy,
+      trace_id: traceId,
+    });
 
-  return {
-    ndaId,
-    status: ndaDoc.status,
-    submittedAt: ndaDoc.submittedAt,
-    trace_id: traceId,
-    candidateStatus: transitionResult.candidate.status,
-  };
+    if (!governanceDecision.allowed) {
+      throw new Error('Governance denied submit_nda');
+    }
+
+    const submittedAt = new Date();
+
+    ndaDoc.status = 'submitted';
+    ndaDoc.submittedAt = submittedAt;
+    ndaDoc.performed_by = performedBy;
+    ndaDoc.trace_id = traceId;
+    await ndaDoc.save();
+
+    await Candidate.findByIdAndUpdate(
+      ndaDoc.candidateId,
+      {
+        $set: {
+          ndaStatus: 'submitted',
+          ndaDocumentId: ndaDoc._id,
+          performed_by: performedBy,
+          trace_id: traceId,
+        },
+      },
+      { new: true, runValidators: true }
+    );
+
+    const transitionResult = await transitionCandidate(
+      ndaDoc.candidateId,
+      'NDA_SUBMITTED',
+      'submit_nda',
+      'NDA submitted via API',
+      performedBy,
+      { traceId }
+    );
+
+    await logAction({
+      candidateId: String(ndaDoc.candidateId),
+      action: 'submit_nda',
+      fromState: 'NDA_PENDING',
+      toState: 'NDA_SUBMITTED',
+      performedBy,
+      trace_id: traceId,
+      metadata: {
+        ndaId,
+        submittedAt,
+        taskHistoryId: transitionResult.history.historyId,
+        sarathiDecision: governanceDecision.decision,
+      },
+    });
+
+    return {
+      ndaId,
+      status: ndaDoc.status,
+      submittedAt: ndaDoc.submittedAt,
+      trace_id: traceId,
+      candidateStatus: transitionResult.candidate.status,
+    };
+  } catch (error) {
+    await logFailure({
+      candidateId: null,
+      action: 'submit_nda',
+      performedBy,
+      trace_id: traceId,
+      error,
+      metadata: {
+        ndaId,
+      },
+    });
+    throw error;
+  }
 }
 
 module.exports = {

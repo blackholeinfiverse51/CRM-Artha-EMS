@@ -1,6 +1,6 @@
 class GovernanceService {
-  async checkPermission(action, context = {}) {
-    // Phase 2 mock hook for Sarathi PDP. Real endpoint call will replace this.
+  async checkPermissionWithDecision(action, context = {}) {
+    // Phase 7 mock hook for Sarathi PDP. Real endpoint call will replace this.
     return {
       allowed: true,
       decision: {
@@ -12,6 +12,11 @@ class GovernanceService {
         context,
       },
     };
+  }
+
+  async checkPermission(action, context = {}) {
+    const evaluation = await this.checkPermissionWithDecision(action, context);
+    return Boolean(evaluation.allowed);
   }
 }
 

@@ -111,7 +111,38 @@ async function executeWithIdempotency({
   }
 }
 
+async function executeMutationWithOptionalIdempotency({
+  idempotencyKey,
+  action,
+  candidateId = null,
+  taskId = null,
+  traceId,
+  requestPayload,
+  handler,
+}) {
+  if (!idempotencyKey) {
+    const result = await handler();
+    return {
+      replayed: false,
+      statusCode: result.statusCode || 200,
+      responsePayload: result.responsePayload,
+      trace_id: result.trace_id || traceId,
+    };
+  }
+
+  return executeWithIdempotency({
+    idempotencyKey,
+    action,
+    candidateId,
+    taskId,
+    traceId,
+    requestPayload,
+    handler,
+  });
+}
+
 module.exports = {
   executeWithIdempotency,
+  executeMutationWithOptionalIdempotency,
   hashRequestPayload,
 };

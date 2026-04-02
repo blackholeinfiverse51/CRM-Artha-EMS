@@ -161,7 +161,10 @@ const hourlyBasedSalaryRoutes = require('./routes/hourlyBasedSalary'); // Hourly
 const newSalaryRoutes = require('./routes/newSalaryManagement'); // New salary management system
 const niyantranNdaRoutes = require('./routes/niyantranNda');
 const niyantranTaskRoutes = require('./routes/niyantranTasks');
+const niyantranNotificationRoutes = require('./routes/niyantranNotifications');
+const setuNiyantranRoutes = require('./routes/setuNiyantran');
 const { startAttendancePersistenceCron, syncExistingAttendance } = require('./services/attendanceCronJobs'); // Attendance persistence cron
+const { startNiyantranReminderJobs } = require('./services/niyantran/reminderScheduler');
 // Middleware imports
 const auth = require('./middleware/auth');
 const adminAuth = require('./middleware/adminAuth');
@@ -387,6 +390,8 @@ app.use('/api/hourly-salary', hourlyBasedSalaryRoutes); // Hourly-based salary m
 app.use('/api/new-salary', newSalaryRoutes); // New salary management system
 app.use('/api/niyantran/nda', niyantranNdaRoutes);
 app.use('/api/niyantran/tasks', niyantranTaskRoutes);
+app.use('/api/niyantran/notifications', niyantranNotificationRoutes);
+app.use('/api/setu', setuNiyantranRoutes);
 
 // app.use('/api/new/ai',aiRoutePy)
 
@@ -724,6 +729,9 @@ async function startServer() {
       // Start attendance persistence cron job
       console.log('🕐 Starting attendance persistence cron job (runs daily at 11:59 PM)...');
       startAttendancePersistenceCron();
+
+      // Start Niyantran notification reminders.
+      startNiyantranReminderJobs();
       
       // Sync existing attendance data for the last 30 days
       console.log('📊 Syncing historical attendance data for the last 30 days...');

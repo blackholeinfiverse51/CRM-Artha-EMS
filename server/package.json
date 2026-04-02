@@ -7,7 +7,10 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js",
     "test:niyantran:phase1": "node scripts/phase1NiyantranSchemaSmokeTest.js",
-    "test:niyantran:phase2": "node --test tests/niyantran/stateMachine.test.js"
+    "test:niyantran:phase2": "node --test tests/niyantran/stateMachine.test.js",
+    "test:niyantran:idempotency": "node --test tests/niyantran/idempotency.test.js",
+    "test:niyantran:all": "node --test tests/niyantran/*.test.js",
+    "demo:niyantran:phase10": "node scripts/phase10IdempotencyReplayDemo.js"
   },
   "author": "",
   "license": "ISC",
