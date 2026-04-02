@@ -31,6 +31,9 @@
 6.  [Pending Tasks & Handover Plan](#6-pending-tasks--handover-plan)
 7.  [Phase 1 - Data Models (Niyantran)](#7-phase-1---data-models-niyantran)
 8.  [Phase 3 - NDA APIs (Niyantran)](#8-phase-3---nda-apis-niyantran)
+9.  [Phase 4 - Recruiter Task APIs](#9-phase-4---recruiter-task-apis)
+10. [Phase 5 - Candidate Task APIs](#10-phase-5---candidate-task-apis)
+11. [Phase 6 - Traceability Integration](#11-phase-6---traceability-integration)
 
 ---
 
@@ -907,3 +910,98 @@ Response includes:
 -   NDA documents are never deleted.
 -   NDA documents are immutable after `submitted` status.
 -   Bucket uploads use append-only pathing; overwrite is disabled.
+
+## 9. Phase 4 - Recruiter Task APIs
+
+Base route: `/api/niyantran/tasks`
+
+### 9.1 Assign Task
+
+-   `POST /assign`
+
+Body:
+
+```json
+{
+  "candidateId": "<candidate_object_id>",
+  "title": "Take-home assessment",
+  "description": "Build API endpoints",
+  "instructions": "Submit repo and notes",
+  "attachedFiles": [{ "url": "https://...", "name": "spec.pdf" }],
+  "dueDate": "2026-04-10T00:00:00.000Z"
+}
+```
+
+Rules:
+
+-   Rejects if candidate already has an active task.
+-   Creates task with `isActive=true`, `status=ASSIGNED`.
+-   Updates candidate `currentTaskId`.
+-   If candidate is `NDA_SUBMITTED`, transitions to `TASK_ASSIGNED`.
+
+### 9.2 Edit Task
+
+-   `PATCH /:taskId`
+-   Editable fields: `title`, `description`, `instructions`, `attachedFiles`, `dueDate`
+-   Read-only once task is terminal (`SUBMITTED`, `REVIEWED`, `REJECTED`)
+
+### 9.3 Soft Delete Task
+
+-   `DELETE /:taskId`
+-   Soft delete behavior: `isActive=false`, `status=REJECTED`
+-   Clears candidate `currentTaskId` if it points to deleted task
+
+### 9.4 Reassign Task
+
+-   `POST /:taskId/reassign`
+-   Closes old task (`REJECTED`, inactive), creates a new `ASSIGNED` active task, and updates candidate `currentTaskId`.
+
+## 10. Phase 5 - Candidate Task APIs
+
+Base route: `/api/niyantran/tasks`
+
+### 10.1 Get Active Task
+
+-   `GET /my-task?candidateId=<id>`
+-   Returns only the single active task for the candidate.
+
+### 10.2 Submit Task
+
+-   `POST /submit`
+
+Body:
+
+```json
+{
+  "taskId": "TASK-20260402-12345",
+  "candidateId": "<candidate_object_id>",
+  "submissionType": "link",
+  "content": "https://github.com/example/repo",
+  "fileUrls": []
+}
+```
+
+Headers:
+
+-   `x-idempotency-key` (required)
+
+Rules:
+
+-   Prevents duplicate submissions using idempotency key store (24h TTL).
+-   Locks task after submit (`status=SUBMITTED`, `isActive=false`, `submittedAt` set).
+-   Candidate transitions deterministically to `SUBMITTED` (`TASK_ASSIGNED -> IN_PROGRESS -> SUBMITTED` when needed).
+
+## 11. Phase 6 - Traceability Integration
+
+Implemented for all mutating Niyantran APIs in Phase 3/4/5:
+
+-   Trace ID resolved from request `x-trace-id` or generated server-side.
+-   `X-Trace-ID` response header set on API responses.
+-   Trace ID persisted in mutated documents (`trace_id` fields).
+-   Action payload forwarded to agent-history-service.
+-   Full payload written to append-only bucket log path:
+    -   `history/candidate-{candidateId}/{trace_id}.json`
+
+Reusable logging service:
+
+-   `services/niyantran/auditService.logAction({ candidateId, action, fromState, toState, performedBy, trace_id, metadata })`
