@@ -1,0 +1,280 @@
+name: Workflow Blackhole Kubernetes CI/CD
+
+on:
+  push:
+    branches:
+      - develop
+      - staging
+      - main
+    paths:
+      - "workflow-blackhole/**"
+      - ".github/workflows/workflow-blackhole-k8s-cicd.yml"
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: "Optional manual target"
+        required: false
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/workflow-blackhole-server
+  APP_DIR: workflow-blackhole/server
+
+jobs:
+  context:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy_env: ${{ steps.map.outputs.deploy_env }}
+      namespace: ${{ steps.map.outputs.namespace }}
+      overlay: ${{ steps.map.outputs.overlay }}
+      gh_environment: ${{ steps.map.outputs.gh_environment }}
+      should_deploy: ${{ steps.map.outputs.should_deploy }}
+    steps:
+      - id: map
+        shell: bash
+        run: |
+          set -euo pipefail
+          BRANCH_NAME="${GITHUB_REF_NAME}"
+          MANUAL_TARGET="${{ github.event.inputs.target_environment || '' }}"
+
+          if [[ -n "${MANUAL_TARGET}" ]]; then
+            BRANCH_NAME="${MANUAL_TARGET}"
+          fi
+
+          case "${BRANCH_NAME}" in
+            develop|dev)
+              echo "deploy_env=dev" >> "$GITHUB_OUTPUT"
+              echo "namespace=workflow-dev" >> "$GITHUB_OUTPUT"
+              echo "overlay=dev" >> "$GITHUB_OUTPUT"
+              echo "gh_environment=dev" >> "$GITHUB_OUTPUT"
+              echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+              ;;
+            staging)
+              echo "deploy_env=staging" >> "$GITHUB_OUTPUT"
+              echo "namespace=workflow-staging" >> "$GITHUB_OUTPUT"
+              echo "overlay=staging" >> "$GITHUB_OUTPUT"
+              echo "gh_environment=staging" >> "$GITHUB_OUTPUT"
+              echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+              ;;
+            main|prod|production)
+              echo "deploy_env=prod" >> "$GITHUB_OUTPUT"
+              echo "namespace=workflow-prod" >> "$GITHUB_OUTPUT"
+              echo "overlay=prod" >> "$GITHUB_OUTPUT"
+              echo "gh_environment=production" >> "$GITHUB_OUTPUT"
+              echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "deploy_env=none" >> "$GITHUB_OUTPUT"
+              echo "namespace=none" >> "$GITHUB_OUTPUT"
+              echo "overlay=none" >> "$GITHUB_OUTPUT"
+              echo "gh_environment=none" >> "$GITHUB_OUTPUT"
+              echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+  build_push:
+    runs-on: ubuntu-latest
+    needs: context
+    if: needs.context.outputs.should_deploy == 'true'
+    outputs:
+      image_ref: ${{ steps.image.outputs.image_ref }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE_SHA_TAG="${GITHUB_SHA}"
+          ENV_LATEST_TAG="${{ needs.context.outputs.deploy_env }}-latest"
+          IMAGE_REF="${IMAGE_NAME}:${IMAGE_SHA_TAG}"
+          ENV_IMAGE_REF="${IMAGE_NAME}:${ENV_LATEST_TAG}"
+
+          docker build -t "${IMAGE_REF}" "${APP_DIR}"
+          docker tag "${IMAGE_REF}" "${ENV_IMAGE_REF}"
+          docker push "${IMAGE_REF}"
+          docker push "${ENV_IMAGE_REF}"
+
+          echo "image_ref=${IMAGE_REF}" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs:
+      - context
+      - build_push
+    if: needs.context.outputs.should_deploy == 'true'
+    environment: ${{ needs.context.outputs.gh_environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Configure EKS cluster access
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws eks update-kubeconfig \
+            --name "${{ secrets.EKS_CLUSTER_NAME }}" \
+            --region "${{ vars.AWS_REGION }}"
+
+      - name: Bootstrap namespace
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl apply -f "workflow-blackhole/deploy/k8s/overlays/${{ needs.context.outputs.overlay }}/namespace.yaml"
+
+      - name: Create or rotate runtime secret from GitHub Environment secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl -n "${{ needs.context.outputs.namespace }}" create secret generic workflow-blackhole-secrets \
+            --from-literal=MONGODB_URI='${{ secrets.MONGODB_URI }}' \
+            --from-literal=JWT_SECRET='${{ secrets.JWT_SECRET }}' \
+            --from-literal=FRONTEND_URL='${{ secrets.FRONTEND_URL }}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply environment overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl apply -k "workflow-blackhole/deploy/k8s/overlays/${{ needs.context.outputs.overlay }}"
+
+      - name: Build ephemeral service account kubeconfig (15m token)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SA_TOKEN="$(kubectl -n "${{ needs.context.outputs.namespace }}" create token ci-deployer --duration=15m)"
+          echo "::add-mask::${SA_TOKEN}"
+
+          API_SERVER="$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')"
+          CA_DATA="$(kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')"
+
+          cat > sa-kubeconfig <<EOF
+          apiVersion: v1
+          kind: Config
+          clusters:
+          - cluster:
+              server: ${API_SERVER}
+              certificate-authority-data: ${CA_DATA}
+            name: ci-cluster
+          contexts:
+          - context:
+              cluster: ci-cluster
+              user: ci-deployer
+              namespace: ${{ needs.context.outputs.namespace }}
+            name: ci-context
+          current-context: ci-context
+          users:
+          - name: ci-deployer
+            user:
+              token: ${SA_TOKEN}
+          EOF
+
+          echo "KUBECONFIG=${PWD}/sa-kubeconfig" >> "$GITHUB_ENV"
+
+      - id: bluegreen
+        name: Deploy with blue-green strategy
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash workflow-blackhole/deploy/scripts/blue_green_deploy.sh \
+            "${{ needs.context.outputs.namespace }}" \
+            "${{ needs.build_push.outputs.image_ref }}"
+
+      - name: Observe pod health and restart count
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl -n "${{ needs.context.outputs.namespace }}" get deployments
+          kubectl -n "${{ needs.context.outputs.namespace }}" get pods -l app=workflow-blackhole-server -o wide
+
+          total_restarts=$(kubectl -n "${{ needs.context.outputs.namespace }}" get pods -l app=workflow-blackhole-server \
+            -o jsonpath='{range .items[*]}{range .status.containerStatuses[*]}{.restartCount}{"\n"}{end}{end}' | awk '{sum+=$1} END {print sum+0}')
+
+          echo "Total restarts: ${total_restarts}"
+          if [[ "${total_restarts}" -gt 5 ]]; then
+            echo "Restart threshold exceeded"
+            exit 1
+          fi
+
+      - name: Validate service availability
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl -n "${{ needs.context.outputs.namespace }}" run "svc-check-${RANDOM}" \
+            --image=curlimages/curl:8.7.1 \
+            --restart=Never \
+            --rm -i \
+            --command -- sh -c "curl -fsS http://workflow-blackhole-active/healthz >/dev/null && curl -fsS http://workflow-blackhole-active/readyz >/dev/null"
+
+      - name: Roll back service switch on failure
+        if: failure() && steps.bluegreen.outputs.previous_color != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash workflow-blackhole/deploy/scripts/rollback_blue_green.sh \
+            "${{ needs.context.outputs.namespace }}" \
+            "${{ steps.bluegreen.outputs.previous_color }}"
+
+      - name: Capture deployment proof logs
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-proof
+          kubectl -n "${{ needs.context.outputs.namespace }}" get deployments -o wide > ci-proof/deployments.txt
+          kubectl -n "${{ needs.context.outputs.namespace }}" get pods -l app=workflow-blackhole-server -o wide > ci-proof/pods.txt
+          kubectl -n "${{ needs.context.outputs.namespace }}" get svc workflow-blackhole-active -o yaml > ci-proof/active-service.yaml
+
+      - name: Upload proof artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-proof-${{ needs.context.outputs.deploy_env }}-${{ github.run_id }}
+          path: ci-proof
+
+  notify_failure:
+    runs-on: ubuntu-latest
+    environment: ${{ needs.context.outputs.gh_environment }}
+    needs:
+      - context
+      - build_push
+      - deploy
+    if: always() && needs.context.outputs.should_deploy == 'true' && (needs.build_push.result != 'success' || needs.deploy.result != 'success')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Send failure alert webhook
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash workflow-blackhole/deploy/scripts/send_alert.sh \
+            "${{ secrets.ALERT_WEBHOOK_URL }}" \
+            "failure" \
+            "${{ needs.context.outputs.deploy_env }}" \
+            "${{ github.ref_name }}" \
+            "${{ needs.build_push.outputs.image_ref }}" \
+            "Pipeline or deployment failure in workflow-blackhole"
