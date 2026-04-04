@@ -4,6 +4,17 @@
 
 Infiverse BHL is a comprehensive, full-stack workforce management system designed to streamline employee operations, task management, attendance tracking, salary management, and AI-powered optimization. The system provides real-time monitoring, automated workflows, and intelligent insights for modern workplace management.
 
+## 📦 Review Packets
+
+Use these structured review packets to run planning, technical, QA, security, and release reviews directly from this repository:
+
+- [review-packets/README.md](review-packets/README.md)
+- [review-packets/01_EXECUTIVE_REVIEW_PACKET.md](review-packets/01_EXECUTIVE_REVIEW_PACKET.md)
+- [review-packets/02_TECHNICAL_REVIEW_PACKET.md](review-packets/02_TECHNICAL_REVIEW_PACKET.md)
+- [review-packets/03_QA_UAT_REVIEW_PACKET.md](review-packets/03_QA_UAT_REVIEW_PACKET.md)
+- [review-packets/04_SECURITY_OPERATIONS_REVIEW_PACKET.md](review-packets/04_SECURITY_OPERATIONS_REVIEW_PACKET.md)
+- [review-packets/05_RELEASE_SIGNOFF_PACKET.md](review-packets/05_RELEASE_SIGNOFF_PACKET.md)
+
 ## 🏗️ Architecture
 
 ### Technology Stack
